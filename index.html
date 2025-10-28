@@ -1,312 +1,286 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Collaborative Mapping System</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Urban Renew Map — Realtime Pins</title>
 
-<!-- Tailwind CSS -->
+<!-- Tailwind -->
 <script src="https://cdn.tailwindcss.com"></script>
 
 <!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Firebase compat -->
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-database-compat.js"></script>
 
 <style>
-html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
-#map {
-    height: 100%;
-    width: 100%;
-}
-.leaflet-popup-content-wrapper {
-    border-radius: 1rem;
-    box-shadow: 0 10px 15px rgba(0,0,0,0.2);
-}
-.leaflet-popup-content {
-    color: #1f2937; /* Tailwind gray-800 */
-}
-#search-form {
-    cursor: default;
-}
+  html, body { height:100%; width:100%; margin:0; padding:0; }
+  #map { position:absolute; top:0; left:0; height:100vh; width:100vw; z-index:0; }
+  .modal-scale { transform:scale(.98); opacity:0; transition:all 150ms ease; }
+  .modal-open { transform:scale(1); opacity:1; }
 </style>
 </head>
-<body class="font-sans antialiased">
 
-<div class="relative h-screen w-screen">
-    <div id="map"></div>
+<body class="bg-gray-100 overflow-hidden">
 
-    <!-- Search Box -->
-    <div class="absolute top-4 right-4 z-20">
-        <form id="search-form" class="flex items-center bg-white rounded-full shadow-lg">
-            <input id="search-input" type="text" placeholder="Search for a place..." class="py-2 px-4 rounded-l-full focus:outline-none w-48 sm:w-64 bg-transparent">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 p-3 rounded-r-full transition-colors">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            </button>
-        </form>
-    </div>
-
-    <!-- Editor Mode Button -->
-    <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
-        <div id="editor-status" class="bg-white/90 backdrop-blur-sm text-gray-800 font-semibold py-2 px-4 rounded-full shadow-lg hidden">
-            Editor Mode Active
-        </div>
-        <button id="editor-mode-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
-            Enter Editor Mode
-        </button>
-    </div>
-
-    <!-- Pin Modal -->
-    <div id="pin-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md transform transition-all scale-95 opacity-0" id="pin-modal-content">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">Add New Location</h2>
-            <form id="pin-form">
-                <div class="mb-4">
-                    <label for="pin-name" class="block text-gray-700 text-sm font-bold mb-2">Location Name</label>
-                    <input type="text" id="pin-name" required class="shadow-sm border rounded-lg w-full py-3 px-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div class="mb-6">
-                    <label for="pin-desc" class="block text-gray-700 text-sm font-bold mb-2">Description</label>
-                    <textarea id="pin-desc" rows="3" required class="shadow-sm border rounded-lg w-full py-3 px-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                </div>
-                <div class="flex items-center justify-end gap-3">
-                    <button type="button" id="cancel-pin-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Cancel</button>
-                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Save Pin</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Password Modal -->
-    <div id="password-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm transform transition-all scale-95 opacity-0" id="password-modal-content">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">Enter Password</h2>
-            <form id="password-form">
-                <div class="mb-4">
-                    <label for="password-input" class="block text-gray-700 text-sm font-bold mb-2">Editor Password</label>
-                    <input type="password" id="password-input" required class="shadow-sm border rounded-lg w-full py-3 px-4 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div class="flex items-center justify-end gap-3">
-                    <button type="button" id="cancel-password-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Cancel</button>
-                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Submit</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Alert Modal -->
-    <div id="alert-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm transform transition-all scale-95 opacity-0" id="alert-modal-content">
-            <p id="alert-message" class="text-center text-gray-800 mb-6"></p>
-            <div class="flex justify-center">
-                <button id="ok-alert-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors">OK</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Confirm Modal -->
-    <div id="confirm-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm transform transition-all scale-95 opacity-0" id="confirm-modal-content">
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Are you sure?</h3>
-            <p id="confirm-message" class="text-gray-700 mb-6"></p>
-            <div class="flex items-center justify-end gap-3">
-                <button id="cancel-confirm-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Cancel</button>
-                <button id="confirm-action-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">Confirm</button>
-            </div>
-        </div>
-    </div>
+<!-- Floating Controls -->
+<div class="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 px-4 py-3 rounded-xl shadow-xl flex gap-3 items-center flex-wrap justify-center">
+  <div id="editor-status" class="hidden bg-gray-100 px-3 py-2 rounded-lg shadow-sm text-gray-800 text-sm">
+    Signed in: <span id="user-email">—</span>
+  </div>
+  
+  <!-- Search Box -->
+  <div class="flex gap-1 bg-gray-100 rounded-lg px-2 py-1">
+    <input id="search-input" placeholder="Search location..." class="bg-transparent border-0 px-2 py-1 text-sm focus:outline-none placeholder-gray-500" />
+    <button id="search-btn" class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">🔍</button>
+  </div>
+  
+  <button id="locate-btn" class="bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 flex items-center gap-1 text-sm">📍 Locate Me</button>
+  <button id="signin-btn" class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 flex items-center gap-1 text-sm">👤 Sign in with Google</button>
+  <button id="signout-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg shadow hover:bg-gray-300 flex items-center gap-1 text-sm hidden">🚪 Sign Out</button>
 </div>
 
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.3/firebase-app.js";
-import { getFirestore, collection, onSnapshot, addDoc, doc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.0.3/firebase-firestore.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.3/firebase-auth.js";
+<!-- Map Container -->
+<div id="map"></div>
 
-const EDITOR_PASSWORD = "edit";
+<!-- Add Pin Modal -->
+<div id="pin-modal" class="fixed inset-0 hidden z-[2000] bg-black bg-opacity-40 flex items-center justify-center p-4">
+  <div class="bg-white w-full max-w-md rounded-2xl p-6 modal-scale shadow-2xl">
+    <h3 class="text-xl font-bold mb-2 text-gray-800">Add Pin</h3>
+    <p id="pin-coords" class="text-sm text-gray-600 mb-4 bg-gray-50 p-2 rounded"></p>
+    <form id="pin-form" class="space-y-3">
+      <input id="pin-title" required placeholder="Title" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <textarea id="pin-desc" rows="3" placeholder="Description" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+      <div class="flex justify-end gap-2">
+        <button type="button" id="cancel-pin" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-700">Cancel</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
 
+<!-- Alert Modal -->
+<div id="alert-modal" class="fixed inset-0 hidden z-[3000] bg-black bg-opacity-40 flex items-center justify-center p-4">
+  <div class="bg-white p-6 rounded-xl modal-scale max-w-sm w-full text-center shadow-2xl">
+    <p id="alert-text" class="text-gray-800 mb-4"></p>
+    <button id="alert-ok" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">OK</button>
+  </div>
+</div>
+
+<script>
+// ✅ Firebase Config
 const firebaseConfig = {
-    apiKey: "AIzaSyBeKqCApxnkuhP8XMGQNh_3s6a85QdTWBU",
-    authDomain: "mapping-system-7e62f.firebaseapp.com",
-    databaseURL: "https://mapping-system-7e62f-default-rtdb.firebaseio.com",
-    projectId: "mapping-system-7e62f",
-    storageBucket: "mapping-system-7e62f.appspot.com",
-    messagingSenderId: "466910563569",
-    appId: "1:466910563569:web:4736a59508f09630f92d50",
-    measurementId: "G-L0PKF7D53B"
+  apiKey: "AIzaSyBuQI813zZeJj4RSlU2_fsBb20lWTCqa7o",
+  authDomain: "urban-renew-map.firebaseapp.com",
+  databaseURL: "https://urban-renew-map-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "urban-renew-map",
+  storageBucket: "urban-renew-map.firebasestorage.app",
+  messagingSenderId: "138295290989",
+  appId: "1:138295290989:web:3ae9ce333ebc4a1a6aa364"
+};
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const db = firebase.database();
+
+const signinBtn = document.getElementById('signin-btn');
+const signoutBtn = document.getElementById('signout-btn');
+const editorStatus = document.getElementById('editor-status');
+const userEmailSpan = document.getElementById('user-email');
+const locateBtn = document.getElementById('locate-btn');
+const alertModal = document.getElementById('alert-modal');
+const alertText = document.getElementById('alert-text');
+const alertOk = document.getElementById('alert-ok');
+
+// Search functionality
+const searchInput = document.getElementById('search-input');
+const searchBtn = document.getElementById('search-btn');
+searchBtn.onclick = async () => {
+  const query = searchInput.value.trim();
+  if (!query) return;
+  try {
+    const res = await fetch(https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1);
+    const data = await res.json();
+    if (data.length > 0) {
+      const { lat, lon } = data[0];
+      map.flyTo([parseFloat(lat), parseFloat(lon)], 14);
+      searchInput.value = ''; // Clear input after successful search
+    } else {
+      showAlert('Location not found');
+    }
+  } catch (err) {
+    showAlert('Search failed. Please try again.');
+  }
+};
+// Allow Enter key to trigger search
+searchInput.onkeypress = (e) => {
+  if (e.key === 'Enter') {
+    searchBtn.click();
+  }
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-setLogLevel('error');
+function showAlert(msg) {
+  alertText.textContent = msg;
+  alertModal.classList.remove('hidden');
+  setTimeout(() => alertModal.querySelector('.modal-scale').classList.add('modal-open'), 10);
+}
+alertOk.onclick = () => alertModal.classList.add('hidden');
 
-const markersCol = collection(db, "markers");
+// Initialize map with bounds
+const map = L.map('map', { 
+  minZoom: 2, 
+  maxBounds: [[-85,-180],[85,180]]
+}).setView([20,0], 2);
 
-let map, isEditorMode = false, currentLatLng = null, markersOnMap = {}, confirmAction = null;
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-// --- Map Setup ---
-function initMap() {
-    map = L.map('map').setView([20,0],2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-    map.on('click', onMapClick);
+// Realtime pins
+const pinsRef = db.ref('pins');
+const markers = {};
+
+function escapeHTML(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
-// --- Firestore Listener ---
-function listenForMarkers() {
-    onSnapshot(markersCol, snapshot => {
-        Object.values(markersOnMap).forEach(m => m.remove());
-        markersOnMap = {};
-        snapshot.docs.forEach(docSnap => {
-            const data = docSnap.data();
-            if(data.lat && data.lng) addMarkerToMap(data, docSnap.id);
-        });
+// Load + sync pins
+function renderPin(key, data) {
+  const m = L.marker([data.lat, data.lng]).addTo(map);
+  
+  // Zoom on pin click
+  m.on('click', () => {
+    map.flyTo([data.lat, data.lng], 15, { duration: 0.8 });
+  });
+
+  let popupHTML = <b>${escapeHTML(data.title)}</b><br>${escapeHTML(data.description)}<br><small>${escapeHTML(data.userEmail)}</small>;
+  const u = auth.currentUser;
+  if (u && u.uid === data.uid) {
+    popupHTML += <br><button class="delete-pin-btn bg-red-600 text-white px-2 py-1 rounded mt-1 text-xs" data-id="${key}">🗑 Delete</button>;
+  }
+  m.bindPopup(popupHTML);
+  markers[key] = m;
+}
+
+pinsRef.on('child_added', snap => {
+  const d = snap.val(), k = snap.key;
+  if (markers[k]) return;
+  renderPin(k, d);
+});
+
+pinsRef.on('child_removed', snap => {
+  const k = snap.key;
+  if (markers[k]) { map.removeLayer(markers[k]); delete markers[k]; }
+});
+
+// Delegate delete button click inside popups
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('delete-pin-btn')) {
+    const id = e.target.dataset.id;
+    const user = auth.currentUser;
+    if (!user) return showAlert("Sign in first");
+    pinsRef.child(id).get().then(snap => {
+      if (!snap.exists()) return showAlert("Pin no longer exists");
+      const data = snap.val();
+      if (data.uid !== user.uid) return showAlert("You can only delete your own pins");
+      if (confirm("Delete this pin?")) {
+        pinsRef.child(id).remove();
+        showAlert("Pin deleted");
+      }
     });
-}
+  }
+});
 
-// --- Add Marker ---
-function addMarkerToMap(data, id) {
-    const marker = L.marker([data.lat, data.lng]).addTo(map);
-    let popup = <div class="p-2"><h3 class="font-bold text-lg mb-1">${escapeHTML(data.name)}</h3><p>${escapeHTML(data.description)}</p>;
-    if(isEditorMode) popup += <button data-id="${id}" class="delete-btn mt-3 bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-full">Delete</button>;
-    popup += '</div>';
-    marker.bindPopup(popup);
-    marker.on('click', e => map.flyTo(e.latlng, 15));
-    markersOnMap[id] = marker;
-}
+// Add Pin Flow
+const pinModal = document.getElementById('pin-modal');
+const pinCoords = document.getElementById('pin-coords');
+const pinForm = document.getElementById('pin-form');
+const pinTitle = document.getElementById('pin-title');
+const pinDesc = document.getElementById('pin-desc');
+const cancelPin = document.getElementById('cancel-pin');
+let pendingLatLng = null;
 
-// --- Event Handlers ---
-function onMapClick(e) {
-    if(isEditorMode) {
-        currentLatLng = e.latlng;
-        document.getElementById('pin-form').reset();
-        showModal('pin-modal');
-    }
-}
+map.on('click', e => {
+  const u = auth.currentUser;
+  if (!u || u.isAnonymous) { showAlert('Sign in first'); return; }
+  pendingLatLng = e.latlng;
+  pinCoords.textContent = Lat: ${e.latlng.lat.toFixed(4)}, Lng: ${e.latlng.lng.toFixed(4)};
+  pinModal.classList.remove('hidden');
+  setTimeout(() => pinModal.querySelector('.modal-scale').classList.add('modal-open'), 10);
+});
+cancelPin.onclick = () => pinModal.classList.add('hidden');
 
-function showModal(id) {
-    const modal = document.getElementById(id);
-    const content = document.getElementById(${id}-content);
-    modal.classList.remove('hidden');
-    setTimeout(() => content.classList.remove('scale-95','opacity-0'), 10);
-}
+// Rate-limited pin submission
+pinForm.onsubmit = async ev => {
+  ev.preventDefault();
+  const u = auth.currentUser;
+  if (!u || u.isAnonymous) {
+    showAlert('Sign in first');
+    return;
+  }
 
-function hideModal(id) {
-    const modal = document.getElementById(id);
-    const content = document.getElementById(${id}-content);
-    content.classList.add('scale-95','opacity-0');
-    setTimeout(() => modal.classList.add('hidden'), 200);
-}
+  const snapshot = await pinsRef.orderByChild('uid').equalTo(u.uid).once('value');
+  const pins = snapshot.val();
+  const now = Date.now();
+  const pinArray = pins ? Object.values(pins) : [];
 
-function escapeHTML(str) {
-    const p = document.createElement('p');
-    p.textContent = str;
-    return p.innerHTML;
-}
+  // Filter pins added in the last 24 hours
+  const recentPins = pinArray.filter(p => now - p.timestamp < 24 * 60 * 60 * 1000);
 
-// --- Init ---
-async function main() {
-    try { await signInAnonymously(auth); } 
-    catch(e){ console.error(e); alert("Firebase auth failed"); }
+  if (recentPins.length >= 5) {
+    showAlert('You’ve reached your 5-pin limit. Please wait 24 hours before adding more.');
+    return;
+  }
 
-    initMap();
-    listenForMarkers();
+  await pinsRef.push({
+    lat: pendingLatLng.lat,
+    lng: pendingLatLng.lng,
+    title: pinTitle.value,
+    description: pinDesc.value,
+    uid: u.uid,
+    userEmail: u.email,
+    timestamp: now
+  });
 
-    document.getElementById('editor-mode-btn').addEventListener('click', toggleEditorMode);
-    document.getElementById('pin-form').addEventListener('submit', handlePinFormSubmit);
-    document.getElementById('cancel-pin-btn').addEventListener('click', () => hideModal('pin-modal'));
-    document.getElementById('map').addEventListener('click', handleDeleteClick);
-    document.getElementById('search-form').addEventListener('submit', handleSearchSubmit);
-    L.DomEvent.on(document.getElementById('search-form'), 'click', L.DomEvent.stopPropagation);
+  // Clear form
+  pinTitle.value = '';
+  pinDesc.value = '';
+  pinModal.classList.add('hidden');
+  showAlert('Pin added successfully!');
+};
 
-    document.getElementById('password-form').addEventListener('submit', handlePasswordSubmit);
-    document.getElementById('cancel-password-btn').addEventListener('click', () => hideModal('password-modal'));
-    document.getElementById('ok-alert-btn').addEventListener('click', () => hideModal('alert-modal'));
-    document.getElementById('cancel-confirm-btn').addEventListener('click', () => hideModal('confirm-modal'));
-    document.getElementById('confirm-action-btn').addEventListener('click', () => {
-        if(typeof confirmAction==='function') confirmAction();
-        confirmAction=null;
-        hideModal('confirm-modal');
-    });
-}
+// Locate Me
+locateBtn.onclick = () => {
+  if (!navigator.geolocation) return showAlert('Geolocation not supported');
+  navigator.geolocation.getCurrentPosition(p => {
+    map.flyTo([p.coords.latitude, p.coords.longitude], 14);
+  }, () => showAlert('Location access denied'), { enableHighAccuracy: true });
+};
 
-main();
-
-// --- Additional Handlers ---
-function toggleEditorMode() {
-    if(isEditorMode){ isEditorMode=false; updateUIAfterModeChange(); return; }
-    document.getElementById('password-input').value='';
-    showModal('password-modal');
-}
-
-function handlePasswordSubmit(e){
-    e.preventDefault();
-    const password = document.getElementById('password-input').value;
-    hideModal('password-modal');
-    if(password === EDITOR_PASSWORD){ 
-        isEditorMode=true; alert('Editor mode activated.'); updateUIAfterModeChange();
-    } else if(password) alert('Incorrect password.');
-}
-
-function updateUIAfterModeChange(){
-    const status = document.getElementById('editor-status');
-    const btn = document.getElementById('editor-mode-btn');
-    status.classList.toggle('hidden',!isEditorMode);
-    if(isEditorMode){
-        btn.textContent='Exit Editor Mode';
-        btn.classList.replace('bg-blue-600','bg-red-600');
-        btn.classList.replace('hover:bg-blue-700','hover:bg-red-700');
-    } else {
-        btn.textContent='Enter Editor Mode';
-        btn.classList.replace('bg-red-600','bg-blue-600');
-        btn.classList.replace('hover:bg-red-700','hover:bg-blue-700');
-    }
-    listenForMarkers();
-}
-
-async function handlePinFormSubmit(e){
-    e.preventDefault();
-    if(!currentLatLng) return;
-    try {
-        await addDoc(markersCol,{
-            lat: currentLatLng.lat,
-            lng: currentLatLng.lng,
-            name: document.getElementById('pin-name').value,
-            description: document.getElementById('pin-desc').value
-        });
-        hideModal('pin-modal');
-    } catch(e){ console.error(e); alert('Could not save pin'); }
-}
-
-function handleDeleteClick(e){
-    if(e.target.classList.contains('delete-btn')){
-        const id = e.target.dataset.id;
-        if(confirm('Are you sure you want to delete this pin?')){
-            deleteDoc(doc(db,'markers',id)).catch(e=>console.error(e));
-        }
-    }
-}
-
-async function handleSearchSubmit(e){
-    e.preventDefault();
-    const query = document.getElementById('search-input').value;
-    if(!query) return;
-    try {
-        const resp = await fetch(https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)});
-        const data = await resp.json();
-        if(data.length>0){
-            const [lat,lon] = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-            map.flyTo([lat,lon],13);
-            L.popup().setLatLng([lat,lon]).setContent(<b>Search Result:</b><br>${escapeHTML(data[0].display_name)}).openOn(map);
-        } else alert('Location not found');
-    } catch(e){ console.error(e); alert('Search failed'); }
-}
+// Auth handling
+const provider = new firebase.auth.GoogleAuthProvider();
+signinBtn.onclick = () => auth.signInWithPopup(provider).catch(err => showAlert(err.message));
+signoutBtn.onclick = () => auth.signOut();
+auth.onAuthStateChanged(u => {
+  if (u && !u.isAnonymous) {
+    signinBtn.classList.add('hidden');
+    signoutBtn.classList.remove('hidden');
+    editorStatus.classList.remove('hidden');
+    userEmailSpan.textContent = u.email;
+  } else {
+    signinBtn.classList.remove('hidden');
+    signoutBtn.classList.add('hidden');
+    editorStatus.classList.add('hidden');
+    userEmailSpan.textContent = '';
+  }
+});
+auth.signInAnonymously().catch(console.error);
 </script>
+
 </body>
 </html>
